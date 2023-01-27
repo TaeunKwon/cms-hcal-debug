@@ -22,7 +22,7 @@ def add_path(process):
 
 def add_reemul(process):
     process.load('SimCalorimetry.HcalTrigPrimProducers.hcaltpdigi_cff')
-    process.simHcalTriggerPrimitiveDigis.RunZS = cms.bool(True)
+    process.simHcalTriggerPrimitiveDigis.RunZS = cms.bool(False)
     process.simHcalTriggerPrimitiveDigis.ZS_threshold = cms.uint32(0)
     add_path(process)
     try:
@@ -109,10 +109,12 @@ def compare_tp_reco(process, name, tag_tp, tag_df, sev):
     add_path(process)
     setattr(process, name, cms.EDAnalyzer("HcalCompareLegacyChains",
                                           triggerPrimitives=cms.InputTag(tag_tp),
-                                          recHits=cms.VInputTag('hbheprereco', 'hfreco'),
+                                          recHits=cms.VInputTag('hbhereco', 'hfreco'),
                                           dataFrames=cms.VInputTag(cms.InputTag(tag_df), cms.InputTag(tag_df)),
                                           swapIphi=cms.bool(False),
-                                          maxSeverity=cms.int32(sev)
+                                          maxSeverity=cms.int32(sev),
+                                          vtxToken=cms.untracked.InputTag("offlinePrimaryVertices","","RECO"),
+                                          maxVtx=cms.uint32(100)
                                           ))
     process.tpCheck *= getattr(process, name)
     return process
