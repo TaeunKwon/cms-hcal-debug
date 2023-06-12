@@ -119,9 +119,26 @@ def compare_tp_reco(process, name, tag_tp, tag_df, sev):
     process.tpCheck *= getattr(process, name)
     return process
 
+def compare_tp_reco_PFA1pPFA2(process, name, tag_df, sev):
+    process.load("RecoLocalCalo.HcalRecAlgos.hcalRecAlgoESProd_cfi")
+    add_fileservice(process)
+    add_path(process)
+    setattr(process, name, cms.EDAnalyzer("HcalCompareChains",
+                                          triggerPrimitives_hw=cms.InputTag('hcalDigis'),
+                                          triggerPrimitives_emu=cms.InputTag('simHcalTriggerPrimitiveDigis'),
+                                          recHits=cms.VInputTag('hbhereco', 'hfreco'),
+                                          dataFrames=cms.VInputTag(cms.InputTag(tag_df), cms.InputTag(tag_df)),
+                                          swapIphi=cms.bool(False),
+                                          maxSeverity=cms.int32(sev),
+                                          vtxToken=cms.untracked.InputTag("offlinePrimaryVertices","","RECO"),
+                                          maxVtx=cms.uint32(100)
+                                          ))
+    process.tpCheck *= getattr(process, name)
+    return process
+
 
 def compare_raw_reco_sev9(process):
-    return compare_tp_reco(process, 'compareRawRecoSeverity9', 'hcalDigis', 'hcalDigis', 9)
+    return compare_tp_reco_v2(process, 'compareRawRecoSeverity9', 'hcalDigis', 9)
 
 
 def compare_reemul_reco_sev9(process):

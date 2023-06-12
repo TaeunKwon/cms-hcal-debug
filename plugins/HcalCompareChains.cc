@@ -73,10 +73,10 @@
 // class declaration
 //
 
-class HcalCompareLegacyChains : public edm::EDAnalyzer {
+class HcalCompareChains : public edm::EDAnalyzer {
    public:
-      explicit HcalCompareLegacyChains(const edm::ParameterSet&);
-      ~HcalCompareLegacyChains();
+      explicit HcalCompareChains(const edm::ParameterSet&);
+      ~HcalCompareChains();
 
       static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
@@ -90,7 +90,8 @@ class HcalCompareLegacyChains : public edm::EDAnalyzer {
       bool first_;
 
       std::vector<edm::InputTag> frames_;
-      edm::InputTag digis_;
+      edm::InputTag digis_hw_;
+      edm::InputTag digis_emu_;
       std::vector<edm::InputTag> rechits_;
 
 //      edm::ESHandle<CaloGeometry> gen_geo_;
@@ -101,7 +102,6 @@ class HcalCompareLegacyChains : public edm::EDAnalyzer {
       TH2D *tp_multiplicity_;
 
       TTree *tps_;
-      TTree *tpsplit_;
       TTree *events_;
       TTree *matches_;
 
@@ -113,21 +113,12 @@ class HcalCompareLegacyChains : public edm::EDAnalyzer {
       int mt_evt_;
       int mt_ls_;
 
-      double tp_energy_;
+      double tp_energy_hw_;
+      int tp_soi_hw_;
+      double tp_energy_emu_;
+      int tp_soi_emu_;
       int tp_ieta_;
       int tp_iphi_;
-      int tp_soi_;
-
-      double tpsplit_energy_;
-      double tpsplit_oot_;
-      int tpsplit_ieta_;
-      int tpsplit_iphi_;
-      int tpsplit_depth_;
-      double tpsplit_ettot_;
-      double tpsplit_rise_avg_;
-      double tpsplit_rise_rms_;
-      double tpsplit_fall_avg_;
-      double tpsplit_fall_rms_;
 
       double ev_rh_energy0_;
       double ev_rh_energy2_;
@@ -141,7 +132,6 @@ class HcalCompareLegacyChains : public edm::EDAnalyzer {
       double mt_rh_energy2_;
       double mt_rh_energy3_;
       double mt_tp_energy_;
-
       double mt_nVtx_;
 
       int mt_ieta_;
@@ -166,11 +156,12 @@ class HcalCompareLegacyChains : public edm::EDAnalyzer {
       const HcalSeverityLevelComputer* comp_;
 };
 
-HcalCompareLegacyChains::HcalCompareLegacyChains(const edm::ParameterSet& config) :
+HcalCompareChains::HcalCompareChains(const edm::ParameterSet& config) :
    edm::EDAnalyzer(),
    first_(true),
    frames_(config.getParameter<std::vector<edm::InputTag>>("dataFrames")),
-   digis_(config.getParameter<edm::InputTag>("triggerPrimitives")),
+   digis_hw_(config.getParameter<edm::InputTag>("triggerPrimitives_hw")),
+   digis_emu_(config.getParameter<edm::InputTag>("triggerPrimitives_emu")),
    rechits_(config.getParameter<std::vector<edm::InputTag>>("recHits")),
    swap_iphi_(config.getParameter<bool>("swapIphi")),
    max_severity_(config.getParameter<int>("maxSeverity")),
@@ -182,7 +173,8 @@ HcalCompareLegacyChains::HcalCompareLegacyChains(const edm::ParameterSet& config
    caloTPGToken_(esConsumes<CaloTPGTranscoder, CaloTPGRecord>())
 //   tpd_geo_h_Token_(esConsumes<HcalTrigTowerGeometry, CaloGeometryRecord>())
 {
-   consumes<HcalTrigPrimDigiCollection>(digis_);
+   consumes<HcalTrigPrimDigiCollection>(digis_hw_);
+   consumes<HcalTrigPrimDigiCollection>(digis_emu_);
    consumes<HBHEDigiCollection>(frames_[0]);
    consumes<HFDigiCollection>(frames_[1]);
    consumes<edm::SortedCollection<HBHERecHit>>(rechits_[0]);
@@ -197,23 +189,13 @@ HcalCompareLegacyChains::HcalCompareLegacyChains(const edm::ParameterSet& config
    df_multiplicity_ = fs->make<TH2D>("df_multiplicity", "DataFrame multiplicity;ieta;iphi", 65, -32.5, 32.5, 72, 0.5, 72.5);
    tp_multiplicity_ = fs->make<TH2D>("tp_multiplicity", "TrigPrim multiplicity;ieta;iphi", 65, -32.5, 32.5, 72, 0.5, 72.5);
 
-   tps_ = fs->make<TTree>("tps", "Trigger primitives");
-   tps_->Branch("et", &tp_energy_);
+   tps_ = fs->make<TTree>("tps", "Trigger primitives hardware");
+   tps_->Branch("et_hw", &tp_energy_hw_);
+   tps_->Branch("soi_hw", &tp_soi_hw_);
+   tps_->Branch("et_emu", &tp_energy_emu_);
+   tps_->Branch("soi_emu", &tp_soi_emu_);
    tps_->Branch("ieta", &tp_ieta_);
    tps_->Branch("iphi", &tp_iphi_);
-   tps_->Branch("soi", &tp_soi_);
-
-   tpsplit_ = fs->make<TTree>("tpsplit", "Trigger primitives");
-   tpsplit_->Branch("et", &tpsplit_energy_);
-   tpsplit_->Branch("oot", &tpsplit_oot_);
-   tpsplit_->Branch("ieta", &tpsplit_ieta_);
-   tpsplit_->Branch("iphi", &tpsplit_iphi_);
-   tpsplit_->Branch("depth", &tpsplit_depth_);
-   tpsplit_->Branch("etsum", &tpsplit_ettot_);
-   tpsplit_->Branch("rise_avg", &tpsplit_rise_avg_);
-   tpsplit_->Branch("rise_rms", &tpsplit_rise_rms_);
-   tpsplit_->Branch("fall_avg", &tpsplit_fall_avg_);
-   tpsplit_->Branch("fall_rms", &tpsplit_fall_rms_);
 
    events_ = fs->make<TTree>("events", "Event quantities");
    events_->Branch("run", &run_, "run/I");
@@ -242,10 +224,10 @@ HcalCompareLegacyChains::HcalCompareLegacyChains(const edm::ParameterSet& config
    matches_->Branch("tp_soi", &mt_tp_soi_);
 }
 
-HcalCompareLegacyChains::~HcalCompareLegacyChains() {}
+HcalCompareChains::~HcalCompareChains() {}
 
 double
-HcalCompareLegacyChains::get_cosh(const HcalDetId& id, const CaloGeometry &gen_geo)
+HcalCompareChains::get_cosh(const HcalDetId& id, const CaloGeometry &gen_geo)
 {
    const auto *sub_geo = dynamic_cast<const HcalGeometry*>(gen_geo.getSubdetectorGeometry(id));
    auto eta = sub_geo->getPosition(id).eta();
@@ -253,7 +235,7 @@ HcalCompareLegacyChains::get_cosh(const HcalDetId& id, const CaloGeometry &gen_g
 }
 
 void
-HcalCompareLegacyChains::beginLuminosityBlock(const edm::LuminosityBlock& lumi, const edm::EventSetup& setup)
+HcalCompareChains::beginLuminosityBlock(const edm::LuminosityBlock& lumi, const edm::EventSetup& setup)
 {
 
    status_ = &setup.getData(statusToken_);
@@ -262,7 +244,7 @@ HcalCompareLegacyChains::beginLuminosityBlock(const edm::LuminosityBlock& lumi, 
 }
 
 void
-HcalCompareLegacyChains::analyze(const edm::Event& event, const edm::EventSetup& setup)
+HcalCompareChains::analyze(const edm::Event& event, const edm::EventSetup& setup)
 {
    using namespace edm;
 
@@ -349,13 +331,22 @@ HcalCompareLegacyChains::analyze(const edm::Event& event, const edm::EventSetup&
 
    std::map<HcalTrigTowerDetId, std::vector<HBHERecHit>> rhits;
    std::map<HcalTrigTowerDetId, std::vector<HFRecHit>> fhits;
-   std::map<HcalTrigTowerDetId, std::vector<HcalTriggerPrimitiveDigi>> tpdigis;
+   std::map<HcalTrigTowerDetId, std::vector<HcalTriggerPrimitiveDigi>> tpdigis_hw;
+   std::map<HcalTrigTowerDetId, std::vector<HcalTriggerPrimitiveDigi>> tpdigis_emu;
 
-   Handle<HcalTrigPrimDigiCollection> digis;
-   if (!event.getByLabel(digis_, digis)) {
+   Handle<HcalTrigPrimDigiCollection> digis_hw;
+   if (!event.getByLabel(digis_hw_, digis_hw)) {
       LogError("HcalTrigPrimDigiCleaner") <<
-         "Can't find hcal trigger primitive digi collection with tag '" <<
-         digis_ << "'" << std::endl;
+         "Can't find hcal trigger primitive digi collection with tag hcalDigis'" <<
+         digis_hw_ << "'" << std::endl;
+      return;
+   }
+
+   Handle<HcalTrigPrimDigiCollection> digis_emu;
+   if (!event.getByLabel(digis_emu_, digis_emu)) {
+      LogError("HcalTrigPrimDigiCleaner") <<
+         "Can't find hcal trigger primitive digi collection with tag hcalDigis'" <<
+         digis_emu_ << "'" << std::endl;
       return;
    }
 
@@ -431,22 +422,41 @@ HcalCompareLegacyChains::analyze(const edm::Event& event, const edm::EventSetup&
 
 //   const CaloTPGTranscoder *decoder = &setup.getData(caloTPGToken_);
 
-   for (const auto& digi: *digis) {
+   for (const auto& digi: *digis_hw) {
       HcalTrigTowerDetId id = digi.id();
       id = HcalTrigTowerDetId(id.ieta(), id.iphi(), 1, id.version());
+
+      tp_energy_emu_ = 0;
+      tp_soi_emu_ = 0;
+
+      for (const auto& digi_emu: *digis_emu) {
+        HcalTrigTowerDetId id_emu = digi_emu.id();
+        id_emu = HcalTrigTowerDetId(id_emu.ieta(), id_emu.iphi(), 1, id_emu.version());
+
+        if (id == id_emu){
+          tp_energy_emu_ = decoder->hcaletValue(id, digi_emu.t0());
+          tp_soi_emu_ = digi_emu.SOI_compressedEt(); 
+          tpdigis_emu[id].push_back(digi_emu);
+          break;
+        }
+      }
+//      if (tp_energy_emu_ != 0) std::cout<<"PFA1' & PFA2 matched!"<<std::endl;
+
       ev_tp_energy_ += decoder->hcaletValue(id, digi.t0());
 
-      tpdigis[id].push_back(digi);
+      tpdigis_hw[id].push_back(digi);
 
-      tp_energy_ = decoder->hcaletValue(id, digi.t0());
+      tp_energy_hw_ = decoder->hcaletValue(id, digi.t0());
+      tp_soi_hw_ = digi.SOI_compressedEt();
+
       tp_ieta_ = id.ieta();
       tp_iphi_ = id.iphi();
-      tp_soi_ = digi.SOI_compressedEt();
+
 
       tps_->Fill();
    }
 
-   for (const auto& pair: tpdigis) {
+   for (const auto& pair: tpdigis_hw) {
       auto id = pair.first;
 
       auto new_id(id);
@@ -533,7 +543,7 @@ HcalCompareLegacyChains::analyze(const edm::Event& event, const edm::EventSetup&
 }
 
 void
-HcalCompareLegacyChains::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+HcalCompareChains::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
   //The following says we do not know what parameters are allowed so do no validation
   // Please change this to state exactly what you do use, even if it is no parameters
   edm::ParameterSetDescription desc;
@@ -542,4 +552,4 @@ HcalCompareLegacyChains::fillDescriptions(edm::ConfigurationDescriptions& descri
 }
 
 //define this as a plug-in
-DEFINE_FWK_MODULE(HcalCompareLegacyChains);
+DEFINE_FWK_MODULE(HcalCompareChains);
